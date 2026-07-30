@@ -1,5 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
+// The core RN SafeAreaView is effectively a no-op on Android (it only
+// really applies insets on iOS) — this version computes real device
+// insets cross-platform, including Android's navigation/gesture bar,
+// which matters now that Expo SDK 54+ defaults to edge-to-edge rendering.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Sharing from 'expo-sharing';
 import { useTheme } from '../theme/ThemeContext';
 import BigButton from '../components/BigButton';

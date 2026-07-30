@@ -1,5 +1,10 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+// The core RN SafeAreaView is effectively a no-op on Android (it only
+// really applies insets on iOS) — this version computes real device
+// insets cross-platform, including Android's navigation/gesture bar,
+// which matters now that Expo SDK 54+ defaults to edge-to-edge rendering.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Sharing from 'expo-sharing';
 import { listReports, deleteReport } from '../database/db';

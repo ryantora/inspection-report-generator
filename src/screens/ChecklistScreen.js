@@ -1,15 +1,21 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, SafeAreaView, Alert, ActionSheetIOS, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Alert, ActionSheetIOS, Platform } from 'react-native';
+// The core RN SafeAreaView is effectively a no-op on Android (it only
+// really applies insets on iOS) — this version computes real device
+// insets cross-platform, including Android's navigation/gesture bar,
+// which matters now that Expo SDK 54+ defaults to edge-to-edge rendering.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getInspection,
-  getChecklistEntries,
+  getCombinedOrderedEntries,
   getValidationSummary,
-  markItemNotApplicable,
   clearChecklistImage,
   saveChecklistImage,
+  saveDomeCameraImage,
+  clearDomeCameraImage,
+  addDomeCamera,
 } from '../database/db';
-import { getItemById, CHECKLIST_ITEMS } from '../config/checklist';
 import { pickFromGallery, pickFromFiles } from '../services/uploadService';
 import { generateReport, ValidationError } from '../services/reportService';
 import { useTheme } from '../theme/ThemeContext';
@@ -21,18 +27,21 @@ export default function ChecklistScreen({ route, navigation }) {
   const { inspectionId } = route.params;
   const theme = useTheme();
   const [inspection, setInspection] = useState(null);
+  // Combined, ordered, sequentially-numbered list: static checklist items
+  // (ids <=16, then >=21) with the dynamic Dome Camera sections spliced in
+  // between — see db.js:getCombinedOrderedEntries.
   const [entries, setEntries] = useState([]);
-  const [summary, setSummary] = useState({ completedCount: 0, totalItems: CHECKLIST_ITEMS.length });
+  const [summary, setSummary] = useState({ completedCount: 0, totalItems: 0 });
   const [generating, setGenerating] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [insp, ent, sum] = await Promise.all([
+    const [insp, combined, sum] = await Promise.all([
       getInspection(inspectionId),
-      getChecklistEntries(inspectionId),
+      getCombinedOrderedEntries(inspectionId),
       getValidationSummary(inspectionId),
     ]);
     setInspection(insp);
-    setEntries(ent);
+    setEntries(combined);
     setSummary(sum);
   }, [inspectionId]);
 
@@ -42,27 +51,41 @@ export default function ChecklistScreen({ route, navigation }) {
     }, [refresh])
   );
 
-  const handleCapture = (entry) => {
+  const handleCapture = (item) => {
     navigation.navigate('Capture', {
       inspectionId,
-      itemId: entry.item_id,
-      itemTitle: entry.item_title,
+      itemId: item.item_id,
+      itemTitle: item.item_title,
       busStopCode: inspection?.bus_stop_code,
+      // Tells CropScreen which table to save into once the photo is
+      // finalized — a static checklist item, or a dynamically added
+      // Dome Camera section.
+      target: item.kind === 'camera' ? 'camera' : 'static',
+      cameraNumber: item.kind === 'camera' ? item.camera_number : undefined,
     });
   };
 
-  const handleUpload = async (entry) => {
+  const handleUpload = async (item) => {
     const runPicker = async (fn) => {
       try {
         const uri = await fn(inspectionId);
         if (!uri) return; // user cancelled
-        await saveChecklistImage({
-          inspectionId,
-          itemId: entry.item_id,
-          itemTitle: entry.item_title,
-          imageUri: uri,
-          sourceType: 'upload',
-        });
+        if (item.kind === 'camera') {
+          await saveDomeCameraImage({
+            inspectionId,
+            cameraNumber: item.camera_number,
+            imageUri: uri,
+            sourceType: 'upload',
+          });
+        } else {
+          await saveChecklistImage({
+            inspectionId,
+            itemId: item.item_id,
+            itemTitle: item.item_title,
+            imageUri: uri,
+            sourceType: 'upload',
+          });
+        }
         refresh();
       } catch (err) {
         Alert.alert('Upload failed', err.message);
@@ -86,22 +109,26 @@ export default function ChecklistScreen({ route, navigation }) {
     }
   };
 
-  const handleRetake = (entry) => {
-    Alert.alert('Replace Image', `Clear the current image for "${entry.item_title}"?`, [
+  const handleRetake = (item) => {
+    Alert.alert('Replace Image', `Clear the current image for "${item.item_title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
         style: 'destructive',
         onPress: async () => {
-          await clearChecklistImage({ inspectionId, itemId: entry.item_id });
+          if (item.kind === 'camera') {
+            await clearDomeCameraImage({ inspectionId, cameraNumber: item.camera_number });
+          } else {
+            await clearChecklistImage({ inspectionId, itemId: item.item_id });
+          }
           refresh();
         },
       },
     ]);
   };
 
-  const handleMarkNA = async (entry) => {
-    await markItemNotApplicable({ inspectionId, itemId: entry.item_id });
+  const handleAddCamera = async () => {
+    await addDomeCamera(inspectionId);
     refresh();
   };
 
@@ -140,21 +167,28 @@ export default function ChecklistScreen({ route, navigation }) {
 
       <FlatList
         data={entries}
-        keyExtractor={(e) => String(e.item_id)}
+        keyExtractor={(e) => `${e.kind}-${e.item_id}`}
         contentContainerStyle={{ paddingBottom: 20 }}
-        renderItem={({ item }) => {
-          const config = getItemById(item.item_id);
-          return (
-            <ChecklistItemCard
-              entry={item}
-              optional={config?.optional}
-              onCapture={() => handleCapture(item)}
-              onUpload={() => handleUpload(item)}
-              onRetake={() => handleRetake(item)}
-              onMarkNA={() => handleMarkNA(item)}
-            />
-          );
-        }}
+        renderItem={({ item }) => (
+          <ChecklistItemCard
+            entry={item}
+            displayNumber={item.displayNumber}
+            optional={false}
+            onCapture={() => handleCapture(item)}
+            onUpload={() => handleUpload(item)}
+            onRetake={() => handleRetake(item)}
+            onMarkNA={() => {}}
+            onPressImage={() =>
+              item.image_uri &&
+              navigation.navigate('ImageViewer', {
+                imageUri: item.image_uri,
+                title: `${item.displayNumber}. ${item.item_title}`,
+              })
+            }
+            showAddCamera={item.kind === 'camera' && item.isLastCamera}
+            onAddCamera={handleAddCamera}
+          />
+        )}
       />
 
       <BigButton

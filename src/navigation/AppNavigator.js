@@ -8,6 +8,7 @@ import CreateInspectionScreen from '../screens/CreateInspectionScreen';
 import ChecklistScreen from '../screens/ChecklistScreen';
 import CaptureScreen from '../screens/CaptureScreen';
 import CropScreen from '../screens/CropScreen';
+import ImageViewerScreen from '../screens/ImageViewerScreen';
 import ReportPreviewScreen from '../screens/ReportPreviewScreen';
 import ReportArchiveScreen from '../screens/ReportArchiveScreen';
 
@@ -41,6 +42,11 @@ export default function AppNavigator() {
           name="Crop"
           component={CropScreen}
           options={{ title: 'Crop Photo', headerShown: false }}
+        />
+        <Stack.Screen
+          name="ImageViewer"
+          component={ImageViewerScreen}
+          options={{ title: 'Photo', headerShown: false }}
         />
         <Stack.Screen
           name="ReportPreview"

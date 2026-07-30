@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { OverlayCompositor } from './src/services/imageOverlay';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -26,8 +27,14 @@ function Root() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <Root />
-    </ThemeProvider>
+    // Required by react-native-safe-area-context (used for SafeAreaView
+    // throughout the app) to actually compute real device insets —
+    // without this provider, every SafeAreaView falls back to zero
+    // insets, which defeats the whole point of switching to it.
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <Root />
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
